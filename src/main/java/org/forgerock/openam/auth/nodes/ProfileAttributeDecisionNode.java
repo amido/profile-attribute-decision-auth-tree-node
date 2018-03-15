@@ -18,30 +18,25 @@
 package org.forgerock.openam.auth.nodes;
 
 import com.google.inject.assistedinject.Assisted;
+import com.iplanet.sso.SSOException;
+import com.sun.identity.idm.AMIdentity;
+import com.sun.identity.idm.IdRepoException;
+import com.sun.identity.idm.IdUtils;
 import com.sun.identity.shared.debug.Debug;
 import org.forgerock.guava.common.collect.ImmutableList;
 import org.forgerock.json.JsonValue;
 import org.forgerock.openam.annotations.sm.Attribute;
-import org.forgerock.openam.auth.node.api.*;
-import javax.inject.Inject;
-import javax.security.auth.callback.Callback;
-import javax.security.auth.callback.NameCallback;
-import java.util.*;
-import static org.forgerock.openam.auth.node.api.SharedStateConstants.AUTH_LEVEL;
-import static org.forgerock.openam.auth.node.api.SharedStateConstants.REALM;
-import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
-import static org.forgerock.openam.auth.node.api.Action.send;
+import org.forgerock.openam.auth.node.api.Action;
+import org.forgerock.openam.auth.node.api.Node;
+import org.forgerock.openam.auth.node.api.NodeProcessException;
+import org.forgerock.openam.auth.node.api.TreeContext;
 import org.forgerock.openam.core.CoreWrapper;
-import com.iplanet.sso.SSOException;
-import com.sun.identity.idm.*;
-import org.forgerock.openam.utils.CollectionUtils;
-import javax.inject.Inject;
-import java.util.List;
-import java.util.ResourceBundle;
-import javax.inject.Inject;
-import org.forgerock.guava.common.collect.ImmutableList;
-import org.forgerock.json.JsonValue;
 import org.forgerock.util.i18n.PreferredLocales;
+
+import javax.inject.Inject;
+import java.util.*;
+
+import static org.forgerock.openam.auth.node.api.SharedStateConstants.REALM;
 
 @Node.Metadata(outcomeProvider = ProfileAttributeDecisionNode.OutcomeProvider.class,
         configClass = ProfileAttributeDecisionNode.Config.class)
@@ -95,6 +90,8 @@ public class ProfileAttributeDecisionNode implements Node {
         userAttributes.add("mail");
         AMIdentity userIdentity = IdUtils.getIdentity(context.sharedState.get(INPUT).asString(), context.sharedState.get(REALM).asString(), userAttributes);
 
+        debug.error("[" + DEBUG_FILE + "]: " + "userIdentity: " + userIdentity);
+
         //Pull out the specified attribute
         debug.message("[" + DEBUG_FILE + "]: Looking for profile attribute " + config.profileAttribute());
 
@@ -117,6 +114,50 @@ public class ProfileAttributeDecisionNode implements Node {
                     if(attr.equals(config.profileAttributeValue())) {
 
                         debug.message("[" + DEBUG_FILE + "]: " + "Found attribute value and matches submitted value");
+
+                        JsonValue newSharedState = context.sharedState.copy();
+
+                        // Retrieve the uid/username
+                        Set uidSet = userIdentity.getAttribute("uid");
+                        String uid = "";
+                        Iterator iter = uidSet.iterator();
+                        if(iter.hasNext()) {
+                            uid = (String) iter.next();
+                        }
+                        debug.error("[" + DEBUG_FILE + "]: " + "uid retrieved: " + uid);
+                        newSharedState.put("uid", uid);
+
+                        Set unameSet = userIdentity.getAttribute("username");
+                        String uname = "";
+                        Iterator iter2 = uidSet.iterator();
+                        if(iter2.hasNext()) {
+                            uid = (String) iter2.next();
+                        }
+                        debug.error("[" + DEBUG_FILE + "]: " + "uname retrieved: " + uname);
+                        newSharedState.put("uname", uname);
+
+//                        goToNext().replaceSharedState(newSharedState).build();
+
+                        // Set the retrieved values in the shared state for later use
+                        Map<String, Set> map = new HashMap<String, Set>();
+                        Set<String> values = new HashSet<String>();
+                        values.add(uid);
+                        map.put("uid", values);
+
+                        Set<String> values2 = new HashSet<String>();
+                        values2.add(uname);
+                        map.put("uname", values2);
+
+                        try {
+                            userIdentity.setAttributes(map);
+                            userIdentity.store();
+                        } catch (IdRepoException e) {
+                            debug.error("[" + DEBUG_FILE + "]: " + " Error storing profile atttibute '{}' ", e);
+                        } catch (SSOException e) {
+                            debug.error("[" + DEBUG_FILE + "]: " + "Node exception", e);
+                        }
+
+
                         return goTo("Match").build();
 
                     } else {
