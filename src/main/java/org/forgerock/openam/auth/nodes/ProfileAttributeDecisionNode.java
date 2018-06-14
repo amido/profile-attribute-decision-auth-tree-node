@@ -12,36 +12,40 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2017 ForgeRock AS.
+ *
+ * Chandra Dhulipala - June 2018 - Modified to display user messages
  */
 // simon.moffatt@forgerock.com - retrieves profile attrbute and checks for specified value
 
 package org.forgerock.openam.auth.nodes;
 
 import com.google.inject.assistedinject.Assisted;
+import com.iplanet.sso.SSOException;
+import com.sun.identity.idm.AMIdentity;
+import com.sun.identity.idm.IdRepoException;
+import com.sun.identity.idm.IdUtils;
 import com.sun.identity.shared.debug.Debug;
 import org.forgerock.guava.common.collect.ImmutableList;
 import org.forgerock.json.JsonValue;
 import org.forgerock.openam.annotations.sm.Attribute;
-import org.forgerock.openam.auth.node.api.*;
+import org.forgerock.openam.auth.node.api.Action;
+import org.forgerock.openam.auth.node.api.Node;
+import org.forgerock.openam.auth.node.api.NodeProcessException;
+import org.forgerock.openam.auth.node.api.TreeContext;
+import org.forgerock.openam.core.CoreWrapper;
+import org.forgerock.util.i18n.PreferredLocales;
+
 import javax.inject.Inject;
 import javax.security.auth.callback.Callback;
-import javax.security.auth.callback.NameCallback;
-import java.util.*;
-import static org.forgerock.openam.auth.node.api.SharedStateConstants.AUTH_LEVEL;
-import static org.forgerock.openam.auth.node.api.SharedStateConstants.REALM;
-import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
-import static org.forgerock.openam.auth.node.api.Action.send;
-import org.forgerock.openam.core.CoreWrapper;
-import com.iplanet.sso.SSOException;
-import com.sun.identity.idm.*;
-import org.forgerock.openam.utils.CollectionUtils;
-import javax.inject.Inject;
+import javax.security.auth.callback.TextOutputCallback;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.ResourceBundle;
-import javax.inject.Inject;
-import org.forgerock.guava.common.collect.ImmutableList;
-import org.forgerock.json.JsonValue;
-import org.forgerock.util.i18n.PreferredLocales;
+import java.util.Set;
+
+import static org.forgerock.openam.auth.node.api.Action.send;
+import static org.forgerock.openam.auth.node.api.SharedStateConstants.REALM;
 
 @Node.Metadata(outcomeProvider = ProfileAttributeDecisionNode.OutcomeProvider.class,
         configClass = ProfileAttributeDecisionNode.Config.class)
@@ -86,10 +90,9 @@ public class ProfileAttributeDecisionNode implements Node {
     @Override
     public Action process(TreeContext context) throws NodeProcessException {
    
-        debug.message("[" + DEBUG_FILE + "]: " + "Starting");    
+        debug.message("[" + DEBUG_FILE + "]: " + "Starting in ProfileAttributeDecisionNode");
 
-        // Pull out the user object
-        // Query on different attributes
+        // Pull out the user object. Query on different attributes
         Set<String> userAttributes = new HashSet<>();
         userAttributes.add("uid");
         userAttributes.add("mail");
@@ -122,11 +125,20 @@ public class ProfileAttributeDecisionNode implements Node {
                     } else {
 
                         debug.message("[" + DEBUG_FILE + "]: " + "Found attribute but value doesn't match submitted value");
-                        return goTo("noMatch").build();
 
+                        if(context.hasCallbacks()) {
+                            debug.message("[" + DEBUG_FILE + "]: " + "hasCallbacks: " );
+                                return goTo("noMatch").build();
+
+                        } else {
+                            debug.message("[" + DEBUG_FILE + "]: " + " no Callbacks: " );
+                            List<Callback> callbacks = new ArrayList<Callback>(1);
+                            String errMsg = "Your account might be locked or made inactive. Please contact your primary DSCRO.";
+                            TextOutputCallback tocb = new TextOutputCallback(TextOutputCallback.INFORMATION, errMsg);
+                            callbacks.add(tocb);
+                            return send(ImmutableList.copyOf(callbacks)).build();
+                        }
                     }
-
-
                 }
             } catch (IdRepoException e) {
 
@@ -136,8 +148,6 @@ public class ProfileAttributeDecisionNode implements Node {
 
                 debug.error("[" + DEBUG_FILE + "]: " + "Node exception", e);
             }
-
-        
         //No match found outcome
         return goTo("noMatch").build();
 
